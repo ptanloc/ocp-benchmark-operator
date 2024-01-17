@@ -1,0 +1,121 @@
+---
+kind: Job
+apiVersion: batch/v1
+metadata:
+  name: "{{ ansible_operator_meta.name }}-client-{{ trunc_uuid }}-{{ item }}"
+  namespace: "{{ operator_namespace }}"
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: fs-drift-benchmark-{{ trunc_uuid }}
+        benchmark-uuid: {{ uuid }}
+{% if workload_args.annotations is defined %}
+      annotations:
+{% for annotation, value in workload_args.annotations.items() %}
+        "{{annotation}}": "{{value}}"
+{% endfor %}
+{% endif %}
+    spec:
+{% if workload_args.runtime_class is defined %}
+      runtimeClassName: "{{ workload_args.runtime_class }}"
+{% endif %}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - fs-drift-benchmark-{{ trunc_uuid }}
+              topologyKey: "kubernetes.io/hostname"
+      restartPolicy: Never
+      containers:
+        - name: fs-drift
+{% if hostpath is defined %}
+          securityContext:
+            privileged: true
+{% endif %}
+          image: {{ workload_args.image | default('quay.io/cloud-bulldozer/fs-drift:latest') }}
+          # example of what to do when debugging image
+          # image: quay.io/bengland2/fs-drift:latest
+          imagePullPolicy: Always
+          command: ["/bin/sh", "-c"]
+          workingDir: /opt/snafu
+          env:
+          - name: uuid
+            value: "{{ uuid }}"
+          - name: test_user
+            value: "{{ test_user | default("ripsaw") }}"
+          - name: clustername
+            value: "{{ clustername }}"
+{% if elasticsearch.url %}
+          - name: es
+            value: "{{ elasticsearch.url }}"
+          - name: es_index
+            value: "{{ elasticsearch.index_name | default("ripsaw-fs-drift") }}"
+          - name: parallel
+            value: "{{ elasticsearch.parallel | default(false) }}"
+          - name: es_verify_cert
+            value: "{{ elasticsearch.verify_cert | default(true) }}"
+{% endif %}
+{% if prometheus is defined %}
+          - name: prom_es
+            value: "{{ prometheus.es_url }}"
+          - name: prom_parallel
+            value: "{{ prometheus.es_parallel | default(false) }}"
+          - name: prom_token
+            value: "{{ prometheus.prom_token | default() }}"
+          - name: prom_url
+            value: "{{ prometheus.prom_url | default() }}"
+{% endif %}
+          - name: TMPDIR
+            value: /tmp/fs-drift-output
+          args:
+            - set -x;
+              rm -rf ${TMPDIR};
+              mkdir -pv ${TMPDIR}/RESULTS;
+              mkdir -pv {{fs_drift_path}}/fs_drift_test_data;
+              python /tmp/fs-drift/subscriber {{bo.resources[0].status.podIP}} {{ trunc_uuid }};
+              cat /tmp/fs-drift/params;
+              run_snafu
+              --tool fs-drift
+{% if workload_args.debug is defined and workload_args.debug %}
+              -v
+{% endif %}
+              --top {{fs_drift_path}}/fs_drift_test_data
+              --dir ${TMPDIR}/RESULTS
+{% if workload_args.samples is defined %}
+              --samples {{workload_args.samples}}
+{% endif %}
+              --yaml-input-file /tmp/fs-drift/params;
+              if [ $? = 0 ] ; then echo RUN STATUS DONE ; else echo FAIL ; exit 1 ; fi
+          volumeMounts:
+            - name: config-volume
+              mountPath: "/tmp/fs-drift"
+{% if workload_args.storageclass is defined  or hostpath is defined %}
+            - name: data-volume
+              mountPath: "{{ fs_drift_path }}"
+{% endif %}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: fs-drift-test-{{ trunc_uuid }}
+            defaultmode: 0777
+{% if workload_args.storageclass is defined %}
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: "fs-drift-claim-{{ trunc_uuid }}-{{ item }}"
+{% elif hostpath is defined %}
+        - name: data-volume
+          hostPath:
+            path: {{ hostpath }}
+            type: DirectoryOrCreate
+{% endif %}
+      restartPolicy: Never
+{% include "metadata.yml.j2" %}

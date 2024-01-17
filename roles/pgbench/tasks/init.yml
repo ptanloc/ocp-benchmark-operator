@@ -1,0 +1,9 @@
+---
+- name: Initialize dbnum_item in redis
+  command: "redis-cli set dbnum_item 0"
+
+- include_role:
+    name: benchmark_state
+    tasks_from: set_state
+  vars:
+    state: "Prep Workload"

@@ -1,0 +1,18 @@
+kind: Pod
+apiVersion: v1
+metadata:
+  name: {{.JobName}}-{{.Iteration}}
+  labels:
+    name: {{.JobName}}
+spec:
+  nodeSelector:
+    {{.nodeSelectorKey}}: {{.nodeSelectorValue}}
+  containers:
+  - name: {{.JobName}}
+    image: {{.containerImage}}
+    ports:
+    - containerPort: 8080
+      protocol: TCP
+    imagePullPolicy: IfNotPresent
+    securityContext:
+      privileged: false

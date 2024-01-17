@@ -1,0 +1,15 @@
+---
+- name: Create vegeta clients
+  k8s:
+    definition: "{{ lookup('template', 'vegeta.yml.j2') | from_yaml }}"
+  loop: "{{ range(0, workload_args.clients|default(1)|int)|list }}"
+  when: benchmark_state.resources[0].status.state == "Building"
+
+- set_fact:
+    resources:
+    - "{{ role_path }}/templates/targets.yml.j2"
+
+
+- name: Generic workload - vegeta
+  include_role:
+    name: generic_workload

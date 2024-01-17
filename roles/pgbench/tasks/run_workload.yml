@@ -1,0 +1,33 @@
+---
+- name: Signal workloads to start
+  command: "redis-cli set pgb_start true"
+
+- name: Check for pods to complete
+  k8s_facts:
+    kind: pod
+    api_version: v1
+    namespace: '{{ operator_namespace }}'
+    label_selectors:
+      - app = pgbench-client-{{ trunc_uuid }}
+  register: pgbench_pods
+
+- name: Increment dbnum_item in redis
+  command: "redis-cli incr dbnum_item"
+  when: "'Succeeded' in (pgbench_pods | json_query('resources[].status.phase'))"
+
+- include_role:
+    name: benchmark_state
+    tasks_from: set_state
+  vars:
+    state: "Prep Workload"
+  when: "'Succeeded' in (pgbench_pods | json_query('resources[].status.phase')) and dbnum_item|int < (num_databases|length - 1)"
+
+- operator_sdk.util.k8s_status:
+    api_version: ripsaw.cloudbulldozer.io/v1alpha1
+    kind: Benchmark
+    name: "{{ ansible_operator_meta.name }}"
+    namespace: "{{ operator_namespace }}"
+    status:
+      state: "Complete"
+      complete: true
+  when: "'Succeeded' in (pgbench_pods | json_query('resources[].status.phase')) and dbnum_item|int >= (num_databases|length - 1)"

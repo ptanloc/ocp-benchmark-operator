@@ -1,0 +1,116 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ ansible_operator_meta.name }}-workload-{{ trunc_uuid }}"
+  namespace: "{{ operator_namespace }}"
+spec:
+  parallelism: {{ workload_args.instances }}
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ workload_args.job_timeout|default(3600) }}
+  template:
+    metadata:
+      labels:
+        app: stressng_workload-{{ trunc_uuid }}
+        type: {{ ansible_operator_meta.name }}-bench-workload-{{ trunc_uuid }}
+        benchmark-uuid: {{ uuid }}
+        benchmark-operator-workload: stressng
+{% if workload_args.annotations is defined %}
+      annotations:
+{% for annotation, value in workload_args.annotations.items() %}
+        "{{annotation}}": "{{value}}"
+{% endfor %}
+{% endif %}
+    spec:
+{% if workload_args.pin is sameas true %}
+      nodeSelector:
+        kubernetes.io/hostname: '{{ workload_args.pin_node }}'
+{% endif %}
+{% if workload_args.runtime_class is defined %}
+      runtimeClassName: "{{ workload_args.runtime_class }}"
+{% endif %}
+{% if workload_args.nodeselector is defined %}
+      nodeSelector: {{ workload_args.nodeselector | to_json }}
+{% endif %}
+      containers:
+      - name: stressng
+{% if workload_args.resources is sameas true %}
+        resources:
+          requests:
+            cpu: {{ workload_args.requests_cpu }}
+            memory: {{ workload_args.requests_memory }}
+          limits:
+            cpu: {{ workload_args.limits_cpu }}
+            memory: {{ workload_args.limits_memory }}
+{% endif %}
+        image: {{ workload_args.image | default('quay.io/cloud-bulldozer/stressng:latest') }}
+        imagePullPolicy: Always
+        env:
+          - name: uuid
+            value: "{{ uuid }}"
+          - name: test_user
+            value: "{{ test_user | default("ripsaw") }}"
+          - name: clustername
+            value: "{{ clustername }}"
+          - name: runtype
+            value: "{{workload_args.runtype}}"
+          - name: timeout
+            value: "{{workload_args.timeout}}"
+{% if workload_args.cpu_stressors is defined %}
+          - name: cpu_stressors
+            value: "{{workload_args.cpu_stressors}}"
+{% endif %}
+{% if workload_args.cpu_percentage is defined %}
+          - name: cpu_percentage
+            value: "{{workload_args.cpu_percentage}}"
+{% endif %}
+{% if workload_args.vm_stressors is defined %}
+          - name: vm_stressors
+            value: "{{workload_args.vm_stressors}}"
+{% endif %}
+{% if workload_args.vm_bytes is defined %}
+          - name: vm_bytes
+            value: "{{workload_args.vm_bytes}}"
+{% endif %}
+{% if workload_args.mem_stressors is defined %}
+          - name: mem_stressors
+            value: "{{workload_args.mem_stressors}}"
+{% endif %}
+{% if elasticsearch.url %}
+          - name: es
+            value: "{{ elasticsearch.url }}"
+          - name: es_index
+            value: "{{ elasticsearch.index_name | default("ripsaw-stressng") }}"
+          - name: parallel
+            value: "{{ elasticsearch.parallel | default(false) }}"
+          - name: es_verify_cert
+            value: "{{ elasticsearch.verify_cert | default(true) }}"
+{% endif %}
+{% if prometheus is defined %}
+          - name: prom_es
+            value: "{{ prometheus.es_url }}"
+          - name: prom_parallel
+            value: "{{ prometheus.es_parallel | default(false) }}"
+          - name: prom_token
+            value: "{{ prometheus.prom_token | default() }}"
+          - name: prom_url
+            value: "{{ prometheus.prom_url | default() }}"
+{% endif %}
+        command: ["/bin/sh", "-c"]
+        args:
+          - run_snafu --tool stressng -j /workload/jobfile -u {{ uuid }}
+{% if workload_args.debug is defined and workload_args.debug %}
+            -v
+{% endif %}
+            ;
+        volumeMounts:
+        - name: stressng-workload-volume
+          mountPath: "/workload"
+          readOnly: false
+      volumes:
+      - name: stressng-workload-volume
+        configMap:
+          name: "{{ ansible_operator_meta.name }}-workload-{{ trunc_uuid }}"
+          defaultMode: 0660
+      restartPolicy: Never
+{% include "metadata.yml.j2" %}

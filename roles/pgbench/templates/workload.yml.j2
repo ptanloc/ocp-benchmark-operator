@@ -1,0 +1,102 @@
+---
+kind: Job
+apiVersion: batch/v1
+metadata:
+  name: 'pgbench-{{ dbnum }}-dbs-client-{{ item.0|int + 1 }}-{{ trunc_uuid }}'
+  namespace: '{{ operator_namespace }}'
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ workload_args.job_timeout|default(3600) }}
+  template:
+    metadata:
+      labels:
+        app: pgbench-client-{{ trunc_uuid }}
+        benchmark-uuid: {{ uuid }}
+{% if workload_args.annotations is defined %}
+      annotations:
+{% for annotation, value in workload_args.annotations.items() %}
+        "{{annotation}}": "{{value}}"
+{% endfor %}
+{% endif %}
+    spec:
+{% if workload_args.runtime_class is defined %}
+      runtimeClassName: "{{ workload_args.runtime_class }}"
+{% endif %}
+      containers:
+      - name: benchmark
+        image: "{{ pgb_base_image }}"
+        imagePullPolicy: Always
+        env:
+          - name: PGPASSWORD
+            value: '{{ item.1.password }}'
+          - name: uuid
+            value: '{{ uuid }}'
+          - name: pgbench_auth
+            value: >-
+                   -h {{ item.1.host }}
+                   -p {% if item.1.port is defined and item.1.port|int > 0 %} {{ item.1.port }} {% else %} {{ db_port }} {% endif %}
+                   -U {{ item.1.user }}
+          - name: test_user
+            value: "{{ test_user | default("ripsaw") }}"
+          - name: clustername
+            value: '{{ clustername }}'
+{% if elasticsearch.url %}
+          - name: es
+            value: "{{ elasticsearch.url }}"
+          - name: es_index
+            value: "{{ elasticsearch.index_name | default("ripsaw-pgbench") }}"
+          - name: parallel
+            value: "{{ elasticsearch.parallel | default(false) }}"
+          - name: es_verify_cert
+            value: "{{ elasticsearch.verify_cert | default(true) }}"
+{% endif %}
+{% if prometheus is defined %}
+          - name: prom_es
+            value: "{{ prometheus.es_url }}"
+          - name: prom_parallel
+            value: "{{ prometheus.es_parallel | default(false) }}"
+          - name: prom_token
+            value: "{{ prometheus.prom_token | default() }}"
+          - name: prom_url
+            value: "{{ prometheus.prom_url | default() }}"
+{% endif %}
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args:
+          - "export run_start_timestamp=$(date +%s.%3N);
+             echo 'Init Database {{ item.1.host }}/{{ item.1.db_name }}';
+             pgbench $pgbench_auth -i -s {{ workload_args.scaling_factor }} {{ init_cmd_flags }} {{ item.1.db_name }};
+             if [ $? -eq 0 ]; then
+               echo 'Waiting for start signal...';
+               redis-cli -h {{ bo.resources[0].status.podIP }} lpush pgb_client_ready {{ item.0|int }};
+               while true; do
+                 if [[ $(redis-cli -h {{ bo.resources[0].status.podIP }} get pgb_start) =~ 'true' ]]; then
+                   echo 'GO!';
+                 {% for clients in workload_args.clients|default('1') %}
+                   export database='{{ item.1.host }}/{{ item.1.db_name }}';
+                   export description='scaling factor: {{ workload_args.scaling_factor }} | threads: {{ workload_args.threads }} | clients: {{ clients }}';
+                   echo '';
+                   echo 'Running PGBench with {{ clients }} clients on database {{ item.1.host }}/{{ item.1.db_name }}';
+                   for i in `seq 1 {{ workload_args.samples|int }}`; do
+                     export sample_start_timestamp=$(date +%s.%3N);
+                     echo \"Begin test sample $i of {{ workload_args.samples }}...\";
+                     export pgbench_opts=\"$pgbench_auth -c {{ clients }} -j {{ workload_args.threads }} {% if workload_args.transactions is defined and workload_args.transactions|int > 0 %} -t {{ workload_args.transactions }} {% elif run_time|int > 0 %} -T {{ run_time }} {% endif %} -s {{ workload_args.scaling_factor }} {{ cmd_flags }} {{ item.1.db_name }}\";
+                     run_snafu --tool pgbench -r $i \
+{% if workload_args.debug is defined and workload_args.debug %}
+                     -v \
+{% endif %}
+                     ;
+                   done;
+                 {% endfor %}
+                 else
+                   continue;
+                 fi;
+                 break;
+               done;
+             fi"
+      restartPolicy: Never
+{% if item.1.pin_node is defined and item.1.pin_node %}
+      nodeSelector:
+        kubernetes.io/hostname: '{{ item.1.pin_node }}'
+{% endif %}
+{% include "metadata.yml.j2" %}

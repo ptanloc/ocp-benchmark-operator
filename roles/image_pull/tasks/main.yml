@@ -1,0 +1,8 @@
+---
+- set_fact:
+    resources:
+    - "{{ role_path }}/templates/image_pull.yml"
+
+- name: Generic workload - image_pull
+  include_role:
+    name: generic_workload

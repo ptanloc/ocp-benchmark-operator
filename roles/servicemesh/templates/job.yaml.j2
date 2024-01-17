@@ -1,0 +1,40 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ ansible_operator_meta.name }}-{{ trunc_uuid }}"
+  namespace: '{{ operator_namespace }}'
+  ownerReferences: "{{ owner }}"
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+      app: "{{ ansible_operator_meta.name }}-{{ trunc_uuid }}"
+{% if workload_args.annotations is defined %}
+      annotations:
+{% for annotation, value in workload_args.annotations.items() %}
+        "{{annotation}}": "{{value}}"
+{% endfor %}
+{% endif %}
+    spec:
+{% if workload_args.runtime_class is defined %}
+      runtimeClassName: "{{ workload_args.runtime_class }}"
+{% endif %}
+      containers:
+      - name: command
+        image: "{{ hf_pod.resources[0].spec.containers[0].image }}"
+        command: [ "bash", "/tmp/files/run.sh" ]
+        volumeMounts:
+        - name: files
+          mountPath: /tmp/files
+        env:
+        - name: HYPERFOIL_IP
+          value: "{{ hf_pod.resources[0].status.podIP }}"
+        - name: TEST_NAME
+          value: "{{ servicemesh.test_name }}"
+      restartPolicy: Never
+      volumes:
+      - name: files
+        configMap:
+          defaultMode: 493
+          name: "{{ ansible_operator_meta.name }}-test-{{ trunc_uuid }}"

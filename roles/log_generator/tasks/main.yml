@@ -1,0 +1,8 @@
+---
+- set_fact:
+    resources:
+    - "{{ role_path }}/templates/log_generator.yml"
+
+- name: Generic workload - log_generator
+  include_role:
+    name: generic_workload

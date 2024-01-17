@@ -1,0 +1,11 @@
+---
+- name: Check for all clients to be ready
+  shell: "redis-cli --raw llen pgb_client_ready"
+  register: client_ready
+
+- include_role:
+    name: benchmark_state
+    tasks_from: set_state
+  vars:
+    state: "Run Workload"
+  when: client_ready.stdout|int == dbnum|int

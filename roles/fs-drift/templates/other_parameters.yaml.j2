@@ -1,0 +1,54 @@
+
+{% if workload_args.threads is defined %}
+threads: {{ workload_args.threads }}
+{% endif %}
+{% if workload_args.duration is defined %}
+duration: {{ workload_args.duration }}
+{% endif %}
+{% if workload_args.max_file_size_kb is defined %}
+max_file_size_kb: {{ workload_args.max_file_size_kb }}
+{% endif %}
+{% if workload_args.max_files is defined %}
+max_files: {{ workload_args.max_files }}
+{% endif %}
+{% if workload_args.max_record_size_kb is defined %}
+max_record_size_kb: {{workload_args.max_record_size_kb}}
+{% endif %}
+{% if workload_args.levels is defined %}
+levels: {{workload_args.levels}}
+{% endif %}
+{% if workload_args.dirs_per_level is defined %}
+dirs_per_level: {{workload_args.dirs_per_level}}
+{% endif %}
+{% if workload_args.max_random_reads is defined %}
+max_random_reads: {{workload_args.max_random_reads}}
+{% endif %}
+{% if workload_args.max_random_writes is defined %}
+max_random_writes: {{workload_args.max_random_writes}}
+{% endif %}
+{% if workload_args.fdatasync_pct is defined %}
+fdatasync_pct: {{workload_args.fdatasync_pct}}
+{% endif %}
+{% if workload_args.fsync_pct is defined %}
+fsync_pct: {{workload_args.fsync_pct}}
+{% endif %}
+{% if workload_args.report_interval is defined %}
+report_interval: {{workload_args.report_interval}}
+{% endif %}
+{% if workload_args.random_distribution is defined %}
+random_distribution: {{workload_args.random_distribution}}
+{% endif %}
+{% if workload_args.mean_velocity is defined %}
+mean_velocity: {{workload_args.mean_velocity}}
+{% endif %}
+{% if workload_args.gaussian_stddev is defined %}
+gaussian_stddev: {{workload_args.gaussian_stddev}}
+{% endif %}
+{% if workload_args.create_stddevs_ahead is defined %}
+create_stddevs_ahead: {{workload_args.create_stddevs_ahead}}
+{% endif %}
+{% if workload_args.response_times is defined %}
+response_times: {{workload_args.response_times}}
+{% endif %}
+
+

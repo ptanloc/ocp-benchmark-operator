@@ -1,0 +1,28 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: fs-drift-benchmark
+  namespace: benchmark-operator
+spec:
+  system_metrics:
+    collection: true
+    prom_url: https://prometheus-k8s.openshift-monitoring.svc.cluster.local:9091
+    es_url: https://search-perfscale-dev-chmf5l4sh66lvxbnadi4bznl3a.us-west-2.es.amazonaws.com
+    prom_token: PROMETHEUS_TOKEN
+    metrics_profile: node-metrics.yml
+  # where elastic search is running
+  elasticsearch:
+    url: https://search-perfscale-dev-chmf5l4sh66lvxbnadi4bznl3a.us-west-2.es.amazonaws.com
+    index_name: ripsaw-fs-drift
+  metadata:
+    collection: true
+  workload:
+    name: fs-drift
+    args:
+      worker_pods: 1
+      threads: 5
+      max_file_size_kb: 4
+      max_files: 1000
+      duration: 240
+      response_times: Y
+      debug: true

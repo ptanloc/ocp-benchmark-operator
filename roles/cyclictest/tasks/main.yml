@@ -1,0 +1,32 @@
+---
+- block:
+
+  - name: Add cyclic test scripts
+    k8s:
+      definition:
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+          name: 'cyclictest-{{ trunc_uuid }}'
+          namespace: '{{ operator_namespace }}'
+        data:
+          cyclictest.sh: "{{ lookup('file', 'cyclictest.sh') }}"
+          functions.sh: "{{ lookup('file', 'functions.sh') }}"
+
+  - name: Start cyclitest job
+    k8s:
+      state: present
+      definition: "{{ lookup('template', 'cyclictestjob.yaml') | from_yaml }}"
+
+  - include_role:
+      name: benchmark_state
+      tasks_from: set_state
+    vars:
+      state: Running
+
+  when: benchmark_state.resources[0].status.state == "Building"
+
+- include_role:
+    name: benchmark_state
+    tasks_from: completed.yml
+  when: benchmark_state.resources[0].status.state == "Running"

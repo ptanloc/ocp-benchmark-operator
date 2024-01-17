@@ -1,0 +1,8 @@
+---
+db_port: 5432
+pgb_base_image: "{{ workload_args.image | default('quay.io/cloud-bulldozer/pgbench:latest') }}"
+timeout_min: 300
+num_databases_pattern: "{{ workload_args.num_databases_pattern|default('all') }}"
+run_time: "{{ workload_args.run_time|default('') }}"
+cmd_flags: "{{ workload_args.cmd_flags|default('') }}"
+init_cmd_flags: "{{ workload_args.init_cmd_flags|default('') }}"

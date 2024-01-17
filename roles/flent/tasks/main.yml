@@ -1,0 +1,131 @@
+---
+- block:
+
+  - name: Start Server(s)
+    k8s:
+      definition: "{{ lookup('template', 'server.yml.j2') | from_yaml }}"
+    register: servers
+    with_sequence: start=0 count={{ workload_args.pair | default('1')|int }}
+
+  - name: Wait for pods to be running....
+    k8s_info:
+      kind: Pod
+      api_version: v1
+      namespace: '{{ operator_namespace }}'
+      label_selectors:
+        - type = flent-bench-server-{{ trunc_uuid }}
+    register: server_pods
+
+  - include_role:
+      name: benchmark_state
+      tasks_from: set_state
+    vars:
+      state: Starting Servers
+
+  when: benchmark_state.resources[0].status.state == "Building"
+
+- block:
+
+  - name: Get server pods
+    k8s_info:
+      kind: Pod
+      api_version: v1
+      namespace: '{{ operator_namespace }}'
+      label_selectors:
+        - type = flent-bench-server-{{ trunc_uuid }}
+    register: server_pods
+
+  - include_role:
+      name: benchmark_state
+      tasks_from: set_state
+    vars:
+      state: Starting Clients
+    when: "workload_args.pair|default('1')|int == server_pods | json_query('resources[].status[]')|selectattr('phase','match','Running')|list|length"
+
+
+  when: benchmark_state.resources[0].status.state == "Starting Servers"
+
+- block:
+
+  - name: Get pod info
+    k8s_info:
+      kind: Pod
+      api_version: v1
+      namespace: '{{ operator_namespace }}'
+      label_selectors:
+        - type = flent-bench-server-{{ trunc_uuid }}
+    register: server_pods
+
+  - block:
+    - name: Start Client(s)
+      k8s:
+        definition: "{{ lookup('template', 'workload.yml.j2') | from_yaml }}"
+      with_items: "{{ server_pods.resources }}"
+
+  - include_role:
+      name: benchmark_state
+      tasks_from: set_state
+    vars:
+      state: Waiting for Clients
+
+  when: benchmark_state.resources[0].status.state == "Starting Clients"
+
+- block:
+
+  - name: Get client pod status
+    k8s_info:
+      kind: Pod
+      api_version: v1
+      namespace: '{{ operator_namespace }}'
+      label_selectors:
+        - app = flent-bench-client-{{ trunc_uuid }}
+    register: client_pods
+  - block:
+
+    - name: Signal workload
+      command: "redis-cli set start-{{ trunc_uuid }} true"
+
+    - include_role:
+        name: benchmark_state
+        tasks_from: set_state
+      vars:
+        state: Running
+      when: "workload_args.pair|default('1')|int == client_pods | json_query('resources[].status[]')|selectattr('phase','match','Running')|list|length and workload_args.pair|default('1')|int  == (client_pods | json_query('resources[].status.podIP')|length)"
+
+  when: benchmark_state.resources[0].status.state == "Waiting for Clients"
+
+- include_role:
+    name: benchmark_state
+    tasks_from: completed.yml
+  when: benchmark_state.resources[0].status.state == "Running"
+
+- block:
+
+  - name: Get Server Pods
+    k8s_info:
+      kind: Pod
+      api_version: v1
+      namespace: '{{ operator_namespace }}'
+      label_selectors:
+        - type = flent-bench-server-{{ trunc_uuid }}
+    register: server_pods
+
+  - name: Pod names - to clean
+    set_fact:
+      clean_pods: |
+          [
+          {% for item in server_pods.resources %}
+            "{{ item['metadata']['name'] }}",
+          {% endfor %}
+          ]
+
+  - name: Cleanup run
+    k8s:
+      kind: pod
+      api_version: v1
+      namespace: '{{ operator_namespace }}'
+      state: absent
+      name: "{{ item }}"
+    with_items: "{{ clean_pods }}"
+
+  when: benchmark_state.resources[0].status.complete and cleanup

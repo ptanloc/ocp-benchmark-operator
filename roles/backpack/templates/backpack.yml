@@ -1,0 +1,85 @@
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: "backpack-{{ trunc_uuid }}"
+  namespace: "{{ operator_namespace }}"
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+        - backpack-{{ trunc_uuid }}
+  template:
+    metadata:
+      labels:
+        name: backpack-{{ trunc_uuid }}
+        app: backpack-{{ trunc_uuid }}
+        benchmark-uuid: {{ uuid }}
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+{% if metadata.label is defined %}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+{% for meta_name, meta_value in metadata.label %}
+            - matchExpressions:
+              - key: {{ meta_name }}
+                operator: In
+                values:
+                - {{ meta_value }}
+{% endfor %}
+{% endif %}
+      containers:
+      - name: backpack
+        image: {{ metadata.image }}
+        command: ["/bin/sh", "-c"]
+        args:
+          - >
+            python3
+            stockpile-wrapper.py
+            -s={{ elasticsearch.url }}
+            -u={{ uuid }}
+            -n=${my_node_name}
+            -N=${my_pod_name}
+            --redisip={{ bo.resources[0].status.podIP }}
+            --redisport=6379
+{% if metadata.force is sameas true %}
+            --force
+{% endif %}
+            --tags={{ metadata.stockpileTags|default(["common", "k8s", "openshift"])|join(",") }}
+{% if metadata.stockpileSkipTags|length > 0 %}
+            --skip-tags={{ metadata.stockpileSkipTags|join(",") }}
+{% endif %}
+{% if metadata.ssl is sameas true %}
+            --sslskipverify True
+{% endif %}
+            && touch /tmp/indexed; sleep infinity
+        imagePullPolicy: Always
+        securityContext:
+          privileged: {{ metadata.privileged }}
+          readOnlyRootFilesystem: false
+          runAsNonRoot: false
+        readinessProbe:
+          exec:
+            command:
+              - ls
+              - /tmp/indexed
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 120
+        env:
+          - name: my_node_name
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+          - name: my_pod_name
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.name
+      serviceAccountName: benchmark-operator
+      terminationGracePeriodSeconds: 30

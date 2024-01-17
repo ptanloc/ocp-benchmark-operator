@@ -1,0 +1,21 @@
+---
+- name: Add oslat test scripts
+  k8s:
+    definition:
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: 'oslat-{{ trunc_uuid }}'
+        namespace: '{{ operator_namespace }}'
+      data:
+        oslat.sh: "{{ lookup('file', 'oslat.sh') }}"
+        functions.sh: "{{ lookup('file', 'functions.sh') }}"
+  when: benchmark_state.resources[0].status.state == "Building" 
+
+- set_fact:
+    resources:
+    - "{{ role_path }}/templates/oslatjob.yaml"
+
+- name: Generic workload - oslat
+  include_role:
+    name: generic_workload

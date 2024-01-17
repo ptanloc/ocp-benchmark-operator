@@ -1,0 +1,8 @@
+---
+- set_fact:
+    resources:
+    - "{{ role_path }}/templates/workload.yml"
+
+- name: Generic workload - byowl
+  include_role:
+    name: generic_workload

@@ -1,0 +1,81 @@
+---
+kind: Job
+apiVersion: batch/v1
+metadata:
+  name: 'ycsb-bench-job-{{ ycsb_workload }}-{{ trunc_uuid }}'
+  namespace: '{{ operator_namespace }}'
+spec:
+  template:
+    metadata:
+      name: '{{ ansible_operator_meta.name }}-ycsb-bench'
+      namespace: '{{ operator_namespace }}'
+      labels:
+        name: 'ycsb-run-{{ trunc_uuid }}'
+{% if workload_args.annotations is defined %}
+      annotations:
+{% for annotation, value in workload_args.annotations.items() %}
+        "{{annotation}}": "{{value}}"
+{% endfor %}
+{% endif %}
+    spec:
+{% if workload_args.runtime_class is defined %}
+      runtimeClassName: "{{ workload_args.runtime_class }}"
+{% endif %}
+      containers:
+      - name: ycsb
+        image: "{{ workload_args.image | default('quay.io/cloud-bulldozer/ycsb-server:latest') }}"
+        imagePullPolicy: Always
+        env:
+        - name: clustername
+          value: "{{ clustername }}"
+        - name: user
+          value: "{{test_user | default()}}"
+        - name: workload
+          value: "{{ycsb_workload}}"
+        - name: num_records
+          value: "{{workload_args.recordcount}}"
+        - name: num_operations
+          value: "{{workload_args.operationcount}}"
+        - name: uuid
+          value: "{{uuid}}"
+{% if elasticsearch.url %}
+        - name: es
+          value: "{{ elasticsearch.url }}"
+        - name: es_index
+          value: "{{ elasticsearch.index_name | default("ripsaw-ycsb") }}"
+        - name: parallel
+          value: "{{ elasticsearch.parallel | default(false) }}"
+        - name: es_verify_cert
+          value: "{{ elasticsearch.verify_cert | default(true) }}"
+{% endif %}
+{% if prometheus is defined %}
+        - name: prom_es
+          value: "{{ prometheus.es_url }}"
+        - name: prom_parallel
+          value: "{{ prometheus.es_parallel | default(false) }}"
+        - name: prom_token
+          value: "{{ prometheus.prom_token | default() }}"
+        - name: prom_url
+          value: "{{ prometheus.prom_url | default() }}"
+{% endif %}
+        imagePullPolicy: Always
+        command: ["/bin/sh", "-c"]
+        args: 
+          - run_snafu --tool ycsb
+{% if workload_args.debug is defined and workload_args.debug %}
+            -v
+{% endif %}
+            -r 1 -d {{ workload_args.driver }} -w {{ ycsb_workload }} -u {{ uuid }} --user {{ test_user | default("ripsaw") }} -x "{{ workload_args.options_run }}";
+        volumeMounts:
+          - name: config-volume
+            mountPath: "/tmp/ycsb"
+{% if workload_args.pin_node is sameas true %}
+      nodeSelector:
+        kubernetes.io/hostname: '{{ workload_args.pin_node }}'
+{% endif %}
+      restartPolicy: Never
+      volumes:
+        - name: config-volume
+          configMap:
+            name: ycsb-test-{{ trunc_uuid }}
+{% include "metadata.yml.j2" %}
